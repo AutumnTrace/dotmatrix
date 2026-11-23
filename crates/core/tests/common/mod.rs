@@ -31,6 +31,28 @@ pub fn load(relative: &str) -> Option<GameBoy> {
     }
 }
 
+/// Decodes a reference screenshot into DMG shades (0 = white .. 3 = black).
+pub fn reference_shades(relative: &str) -> Option<Vec<u8>> {
+    let path = test_rom_dir().join(relative);
+    let file = std::fs::File::open(&path).ok()?;
+    let mut decoder = png::Decoder::new(std::io::BufReader::new(file));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()?];
+    let info = reader.next_frame(&mut buf).ok()?;
+    let channels = info.color_type.samples();
+    let shades = buf[..info.buffer_size()]
+        .chunks_exact(channels)
+        .map(|px| match px[0] {
+            0xC0..=0xFF => 0,
+            0x80..=0xBF => 1,
+            0x30..=0x7F => 2,
+            _ => 3,
+        })
+        .collect();
+    Some(shades)
+}
+
 pub fn assert_pass(name: &str, verdict: Verdict) {
     match verdict {
         Verdict::Pass => {}

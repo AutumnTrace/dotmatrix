@@ -18,6 +18,7 @@ pub mod cpu;
 mod gameboy;
 pub mod harness;
 pub mod joypad;
+pub mod png;
 pub mod ppu;
 pub mod serial;
 pub mod timer;
