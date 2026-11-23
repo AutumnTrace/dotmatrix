@@ -1,9 +1,11 @@
 //! Cartridge header parsing and memory bank controllers.
 //!
-//! Supported so far: ROM only (optionally with RAM) and MBC1, including the
-//! "MBC1M" multicart wiring.
+//! Supported: ROM only, MBC1 (including the "MBC1M" multicart wiring), MBC2,
+//! MBC3 (with a real-time clock that counts *emulated* time) and MBC5.
 
 use std::fmt;
+
+const T_CYCLES_PER_SECOND: u32 = 4_194_304;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CartridgeError {
@@ -110,10 +112,85 @@ impl Header {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct Rtc {
+    /// Live registers: seconds, minutes, hours, day low, day high/flags.
+    live: [u8; 5],
+    latched: [u8; 5],
+    latch_armed: bool,
+    subsecond: u32,
+}
+
+impl Rtc {
+    fn halted(&self) -> bool {
+        self.live[4] & 0x40 != 0
+    }
+
+    fn tick(&mut self, t_cycles: u32) {
+        if self.halted() {
+            return;
+        }
+        self.subsecond += t_cycles;
+        while self.subsecond >= T_CYCLES_PER_SECOND {
+            self.subsecond -= T_CYCLES_PER_SECOND;
+            self.advance_second();
+        }
+    }
+
+    fn advance_second(&mut self) {
+        // Registers are 6/6/5/9 bits wide; out-of-range values written by
+        // software count up to the bit width and wrap to 0, like hardware.
+        self.live[0] = (self.live[0] + 1) & 0x3F;
+        if self.live[0] != 60 {
+            return;
+        }
+        self.live[0] = 0;
+        self.live[1] = (self.live[1] + 1) & 0x3F;
+        if self.live[1] != 60 {
+            return;
+        }
+        self.live[1] = 0;
+        self.live[2] = (self.live[2] + 1) & 0x1F;
+        if self.live[2] != 24 {
+            return;
+        }
+        self.live[2] = 0;
+        let day = (u16::from(self.live[4] & 1) << 8 | u16::from(self.live[3])) + 1;
+        self.live[3] = day as u8;
+        self.live[4] = (self.live[4] & 0xFE) | ((day >> 8) as u8 & 1);
+        if day > 0x1FF {
+            self.live[4] |= 0x80; // day counter carry, sticky until cleared
+        }
+    }
+
+    fn write(&mut self, reg: u8, value: u8) {
+        let i = usize::from(reg - 0x08);
+        const MASKS: [u8; 5] = [0x3F, 0x3F, 0x1F, 0xFF, 0xC1];
+        self.live[i] = value & MASKS[i];
+        if i == 0 {
+            self.subsecond = 0;
+        }
+    }
+
+    fn latch_write(&mut self, value: u8) {
+        if value == 0 {
+            self.latch_armed = true;
+        } else {
+            if value == 1 && self.latch_armed {
+                self.latched = self.live;
+            }
+            self.latch_armed = false;
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 enum Mbc {
     None,
     Mbc1 { bank1: u8, bank2: u8, mode: bool, multicart: bool },
+    Mbc2 { bank: u8 },
+    Mbc3 { rom_bank: u8, ram_select: u8, rtc: Option<Box<Rtc>> },
+    Mbc5 { rom_bank: u16, ram_bank: u8 },
 }
 
 #[derive(Clone)]
@@ -150,6 +227,17 @@ impl Cartridge {
                 let mbc = Mbc::Mbc1 { bank1: 1, bank2: 0, mode: false, multicart };
                 let ram = if kind == 0x01 { 0 } else { header.ram_size };
                 (mbc, kind == 0x03, ram)
+            }
+            // MBC2 has 512 half-bytes of RAM built into the mapper.
+            0x05 | 0x06 => (Mbc::Mbc2 { bank: 1 }, kind == 0x06, 512),
+            0x0F..=0x13 => {
+                let rtc = matches!(kind, 0x0F | 0x10).then(Box::<Rtc>::default);
+                let ram = if matches!(kind, 0x0F | 0x11) { 0 } else { header.ram_size };
+                (Mbc::Mbc3 { rom_bank: 1, ram_select: 0, rtc }, matches!(kind, 0x0F | 0x10 | 0x13), ram)
+            }
+            0x19..=0x1E => {
+                let ram = if matches!(kind, 0x19 | 0x1C) { 0 } else { header.ram_size };
+                (Mbc::Mbc5 { rom_bank: 1, ram_bank: 0 }, matches!(kind, 0x1B | 0x1E), ram)
             }
             other => return Err(CartridgeError::Unsupported(other)),
         };
@@ -203,12 +291,17 @@ impl Cartridge {
                 let rom0 = if *mode { high } else { 0 };
                 (rom0, high | usize::from(low))
             }
+            Mbc::Mbc2 { bank } => (0, usize::from(*bank)),
+            Mbc::Mbc3 { rom_bank, .. } => (0, usize::from(*rom_bank)),
+            Mbc::Mbc5 { rom_bank, .. } => (0, usize::from(*rom_bank)),
         };
         self.rom0_offset = (rom0 % banks) * 0x4000;
         self.romx_offset = (romx % banks) * 0x4000;
 
         let ram_bank = match &self.mbc {
             Mbc::Mbc1 { bank2, mode: true, .. } => usize::from(*bank2),
+            Mbc::Mbc3 { ram_select, .. } if *ram_select < 4 => usize::from(*ram_select),
+            Mbc::Mbc5 { ram_bank, .. } => usize::from(*ram_bank),
             _ => 0,
         };
         let ram_banks = (self.ram.len() / 0x2000).max(1);
@@ -229,23 +322,72 @@ impl Cartridge {
                 0x4000..=0x5FFF => *bank2 = value & 0x03,
                 _ => *mode = value & 1 != 0,
             },
+            Mbc::Mbc2 { bank } => {
+                if addr < 0x4000 {
+                    // Address bit 8 selects between RAM enable and ROM bank.
+                    if addr & 0x0100 == 0 {
+                        self.ram_enabled = value & 0x0F == 0x0A;
+                    } else {
+                        *bank = (value & 0x0F).max(1);
+                    }
+                }
+            }
+            Mbc::Mbc3 { rom_bank, ram_select, rtc } => match addr {
+                0x0000..=0x1FFF => self.ram_enabled = value & 0x0F == 0x0A,
+                // 7 bits on a stock MBC3; MBC30 carts (4 MiB) use all 8.
+                0x2000..=0x3FFF => *rom_bank = value.max(1),
+                0x4000..=0x5FFF => *ram_select = value & 0x0F,
+                _ => {
+                    if let Some(rtc) = rtc {
+                        rtc.latch_write(value);
+                    }
+                }
+            },
+            Mbc::Mbc5 { rom_bank, ram_bank } => match addr {
+                0x0000..=0x1FFF => self.ram_enabled = value == 0x0A,
+                0x2000..=0x2FFF => *rom_bank = (*rom_bank & 0x100) | u16::from(value),
+                0x3000..=0x3FFF => *rom_bank = (*rom_bank & 0xFF) | (u16::from(value & 1) << 8),
+                0x4000..=0x5FFF => *ram_bank = value & 0x0F,
+                _ => {}
+            },
         }
         self.update_offsets();
     }
 
     pub fn read_ram(&self, addr: u16) -> u8 {
-        if !self.ram_enabled || self.ram.is_empty() {
+        if !self.ram_enabled {
             return 0xFF;
         }
-        self.ram[(self.ram_offset + usize::from(addr & 0x1FFF)) % self.ram.len()]
+        let a = usize::from(addr & 0x1FFF);
+        match &self.mbc {
+            Mbc::Mbc2 { .. } => self.ram[a & 0x1FF] | 0xF0,
+            Mbc::Mbc3 { ram_select: sel @ 0x08..=0x0C, rtc: Some(rtc), .. } => rtc.latched[usize::from(*sel - 0x08)],
+            _ if self.ram.is_empty() => 0xFF,
+            _ => self.ram[(self.ram_offset + a) % self.ram.len()],
+        }
     }
 
     pub fn write_ram(&mut self, addr: u16, value: u8) {
-        if !self.ram_enabled || self.ram.is_empty() {
+        if !self.ram_enabled {
             return;
         }
-        let len = self.ram.len();
-        self.ram[(self.ram_offset + usize::from(addr & 0x1FFF)) % len] = value;
+        let a = usize::from(addr & 0x1FFF);
+        match &mut self.mbc {
+            Mbc::Mbc2 { .. } => self.ram[a & 0x1FF] = value & 0x0F,
+            Mbc::Mbc3 { ram_select: sel @ 0x08..=0x0C, rtc: Some(rtc), .. } => rtc.write(*sel, value),
+            _ if self.ram.is_empty() => {}
+            _ => {
+                let len = self.ram.len();
+                self.ram[(self.ram_offset + a) % len] = value;
+            }
+        }
+    }
+
+    /// Advances the MBC3 real-time clock.
+    pub fn tick(&mut self, t_cycles: u32) {
+        if let Mbc::Mbc3 { rtc: Some(rtc), .. } = &mut self.mbc {
+            rtc.tick(t_cycles);
+        }
     }
 }
 
@@ -314,6 +456,31 @@ mod tests {
         assert_eq!(cart.read_ram(0xA000), 0x12);
         assert!(cart.has_battery());
         assert_eq!(cart.ram()[0x4000], 0x34);
+    }
+
+    #[test]
+    fn mbc5_uses_nine_bit_bank_and_allows_bank_zero() {
+        let mut cart = Cartridge::new(banked_rom(0x19, 512, 0)).unwrap();
+        cart.write_rom(0x2000, 0x00);
+        assert_eq!(romx_bank(&cart), 0);
+        cart.write_rom(0x2000, 0x34);
+        cart.write_rom(0x3000, 0x01);
+        assert_eq!(romx_bank(&cart), 0x134);
+    }
+
+    #[test]
+    fn mbc3_rtc_latches_and_counts_emulated_time() {
+        let mut cart = Cartridge::new(banked_rom(0x10, 4, 3)).unwrap();
+        cart.write_rom(0x0000, 0x0A);
+        cart.write_rom(0x4000, 0x08);
+        cart.write_ram(0xA000, 58);
+        cart.tick(T_CYCLES_PER_SECOND * 3);
+        assert_eq!(cart.read_ram(0xA000), 0, "unlatched value is still zero");
+        cart.write_rom(0x6000, 0x00);
+        cart.write_rom(0x6000, 0x01);
+        assert_eq!(cart.read_ram(0xA000), 1, "58 + 3 seconds wraps to 1");
+        cart.write_rom(0x4000, 0x09);
+        assert_eq!(cart.read_ram(0xA000), 1, "minutes carried");
     }
 
     #[test]

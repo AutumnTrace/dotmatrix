@@ -67,6 +67,7 @@ mooneye_tests! {
     // OAM DMA
     oam_dma_basic => "acceptance/oam_dma/basic.gb",
     oam_dma_reg_read => "acceptance/oam_dma/reg_read.gb",
+    oam_dma_sources => "acceptance/oam_dma/sources-GS.gb",
     oam_dma_restart => "acceptance/oam_dma_restart.gb",
     oam_dma_start => "acceptance/oam_dma_start.gb",
     oam_dma_timing => "acceptance/oam_dma_timing.gb",
@@ -97,7 +98,7 @@ mooneye_tests! {
     timer_tima_reload => "acceptance/timer/tima_reload.gb",
     timer_tima_write_reloading => "acceptance/timer/tima_write_reloading.gb",
     timer_tma_write_reloading => "acceptance/timer/tma_write_reloading.gb",
-    // Memory bank controllers (MBC1)
+    // Memory bank controllers
     mbc1_bits_bank1 => "emulator-only/mbc1/bits_bank1.gb",
     mbc1_bits_bank2 => "emulator-only/mbc1/bits_bank2.gb",
     mbc1_bits_mode => "emulator-only/mbc1/bits_mode.gb",
@@ -111,4 +112,19 @@ mooneye_tests! {
     mbc1_rom_4mb => "emulator-only/mbc1/rom_4Mb.gb",
     mbc1_rom_512kb => "emulator-only/mbc1/rom_512kb.gb",
     mbc1_rom_8mb => "emulator-only/mbc1/rom_8Mb.gb",
+    mbc2_bits_ramg => "emulator-only/mbc2/bits_ramg.gb",
+    mbc2_bits_romb => "emulator-only/mbc2/bits_romb.gb",
+    mbc2_bits_unused => "emulator-only/mbc2/bits_unused.gb",
+    mbc2_ram => "emulator-only/mbc2/ram.gb",
+    mbc2_rom_1mb => "emulator-only/mbc2/rom_1Mb.gb",
+    mbc2_rom_2mb => "emulator-only/mbc2/rom_2Mb.gb",
+    mbc2_rom_512kb => "emulator-only/mbc2/rom_512kb.gb",
+    mbc5_rom_16mb => "emulator-only/mbc5/rom_16Mb.gb",
+    mbc5_rom_1mb => "emulator-only/mbc5/rom_1Mb.gb",
+    mbc5_rom_2mb => "emulator-only/mbc5/rom_2Mb.gb",
+    mbc5_rom_32mb => "emulator-only/mbc5/rom_32Mb.gb",
+    mbc5_rom_4mb => "emulator-only/mbc5/rom_4Mb.gb",
+    mbc5_rom_512kb => "emulator-only/mbc5/rom_512kb.gb",
+    mbc5_rom_64mb => "emulator-only/mbc5/rom_64Mb.gb",
+    mbc5_rom_8mb => "emulator-only/mbc5/rom_8Mb.gb",
 }
