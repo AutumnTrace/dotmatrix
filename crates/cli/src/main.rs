@@ -1,4 +1,4 @@
-//! Headless runner: serial output, benchmarks and test ROM checks.
+//! Headless runner: screenshots, serial output, benchmarks and test ROM checks.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -6,7 +6,8 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use dotmatrix_core::harness::{self, Verdict};
-use dotmatrix_core::{Button, FRAMES_PER_SECOND, GameBoy};
+use dotmatrix_core::png::{self, palette};
+use dotmatrix_core::{Button, FRAMES_PER_SECOND, GameBoy, HEIGHT, WIDTH};
 
 const USAGE: &str = "\
 dotmatrix - a Game Boy (DMG) emulator
@@ -18,6 +19,9 @@ USAGE:
 
 RUN OPTIONS:
     --frames <n>            frames to run (default 600, about 10 s)
+    --screenshot <file>     write the last frame as PNG
+    --scale <n>             screenshot scale factor (default 1)
+    --palette <name>        gray | green (default gray)
     --press <btn>@<frame>[:<hold>]
                             hold a button from that frame for <hold> frames
                             (default 5); buttons: a b start select up down left right
@@ -80,6 +84,9 @@ fn parse_press(spec: &str) -> Result<Press, String> {
 fn run(args: &[String]) -> Result<ExitCode, String> {
     let mut rom = None;
     let mut frames = 600u64;
+    let mut screenshot: Option<PathBuf> = None;
+    let mut scale = 1usize;
+    let mut pal = palette::GRAYSCALE;
     let mut presses = Vec::new();
     let mut serial = false;
     let mut save: Option<PathBuf> = None;
@@ -89,6 +96,15 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     while i < args.len() {
         match args[i].as_str() {
             "--frames" => frames = number(value(args, &mut i, "--frames")?, "--frames")?,
+            "--screenshot" => screenshot = Some(value(args, &mut i, "--screenshot")?.into()),
+            "--scale" => scale = number(value(args, &mut i, "--scale")?, "--scale")?.clamp(1, 16) as usize,
+            "--palette" => {
+                pal = match value(args, &mut i, "--palette")? {
+                    "gray" | "grey" => palette::GRAYSCALE,
+                    "green" => palette::DMG_GREEN,
+                    other => return Err(format!("unknown palette '{other}'")),
+                }
+            }
             "--press" => presses.push(parse_press(value(args, &mut i, "--press")?)?),
             "--serial" => serial = true,
             "--save" => save = Some(value(args, &mut i, "--save")?.into()),
@@ -140,6 +156,11 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
         );
     }
 
+    if let Some(path) = &screenshot {
+        let rgb = png::shades_to_rgb(gb.framebuffer(), WIDTH, &pal, scale);
+        let bytes = png::encode((WIDTH * scale) as u32, (HEIGHT * scale) as u32, 3, &rgb);
+        std::fs::write(path, bytes).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    }
     if let (Some(path), Some(data)) = (&save, gb.save_data()) {
         std::fs::write(path, data).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }

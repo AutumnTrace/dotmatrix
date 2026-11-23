@@ -3,8 +3,10 @@
 //! Timing is tracked per dot (4 per M-cycle) so STAT mode changes, LY and
 //! the STAT interrupt line move at the right moments, including the
 //! variable-length mode 3 (SCX fine scroll, window start and the per-object
-//! fetch penalty from Pan Docs). This is the timing half of the PPU only:
-//! nothing is drawn yet and the framebuffer stays blank.
+//! fetch penalty from Pan Docs). Pixels, on the other hand, are produced a
+//! whole scanline at a time when mode 3 ends. That is enough for every
+//! game that only changes registers between lines, and for dmg-acid2, but
+//! not for mid-scanline raster tricks (see the Mealybug tests).
 
 pub const WIDTH: usize = 160;
 pub const HEIGHT: usize = 144;
@@ -24,7 +26,10 @@ pub enum Mode {
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Sprite {
+    y: u8,
     x: u8,
+    tile: u8,
+    flags: u8,
 }
 
 pub struct Ppu {
@@ -56,6 +61,7 @@ pub struct Ppu {
     /// Set once WY == LY has been seen this frame; the window can only start
     /// on lines after that.
     wy_triggered: bool,
+    window_line: u8,
 
     sprites: [Sprite; 10],
     sprite_count: usize,
@@ -88,6 +94,7 @@ impl Ppu {
             lyc_hold: 0,
             stat_line: false,
             wy_triggered: false,
+            window_line: 0,
             sprites: [Sprite::default(); 10],
             sprite_count: 0,
             framebuffer: Box::new([0; WIDTH * HEIGHT]),
@@ -177,6 +184,7 @@ impl Ppu {
             self.line += 1;
             if self.line == LINES_PER_FRAME {
                 self.line = 0;
+                self.window_line = 0;
                 self.wy_triggered = false;
             }
             self.ly = self.line;
@@ -209,6 +217,7 @@ impl Ppu {
                 self.mode3_end = 80 + self.mode3_length();
                 self.mode = Mode::Drawing;
             } else if self.dot == self.mode3_end && self.mode == Mode::Drawing {
+                self.render_line();
                 self.mode = Mode::HBlank;
             }
         }
@@ -245,7 +254,7 @@ impl Ppu {
         for entry in self.oam.chunks_exact(4) {
             let y = u16::from(entry[0]);
             if target >= y && target < y + height {
-                self.sprites[self.sprite_count] = Sprite { x: entry[1] };
+                self.sprites[self.sprite_count] = Sprite { y: entry[0], x: entry[1], tile: entry[2], flags: entry[3] };
                 self.sprite_count += 1;
                 if self.sprite_count == 10 {
                     break;
@@ -299,6 +308,90 @@ impl Ppu {
             len += penalty.saturating_sub(3);
         }
         len.min(289)
+    }
+
+    fn tile_row(&self, tile_addr: usize, row: usize) -> (u8, u8) {
+        let a = tile_addr + row * 2;
+        (self.vram[a], self.vram[a + 1])
+    }
+
+    fn bg_tile_addr(&self, tile: u8) -> usize {
+        if self.lcdc & 0x10 != 0 { usize::from(tile) * 16 } else { (0x1000 + i32::from(tile as i8) * 16) as usize }
+    }
+
+    fn render_line(&mut self) {
+        let ly = usize::from(self.ly);
+        let mut bg_color = [0u8; WIDTH];
+
+        if self.lcdc & 0x01 != 0 {
+            let window = self.window_visible_on_line();
+            let win_start = if window { i16::from(self.wx) - 7 } else { WIDTH as i16 };
+            let bg_map = if self.lcdc & 0x08 != 0 { 0x1C00 } else { 0x1800 };
+            let win_map = if self.lcdc & 0x40 != 0 { 0x1C00 } else { 0x1800 };
+            let bg_y = usize::from(self.ly.wrapping_add(self.scy));
+            let win_y = usize::from(self.window_line);
+
+            for (x, out) in bg_color.iter_mut().enumerate() {
+                let (map, px, py) = if (x as i16) >= win_start {
+                    (win_map, (x as i16 - win_start) as usize, win_y)
+                } else {
+                    (bg_map, (x + usize::from(self.scx)) & 0xFF, bg_y)
+                };
+                let tile = self.vram[map + (py / 8) * 32 + px / 8];
+                let (lo, hi) = self.tile_row(self.bg_tile_addr(tile), py & 7);
+                let bit = 7 - (px & 7);
+                *out = ((hi >> bit) & 1) << 1 | ((lo >> bit) & 1);
+            }
+            if win_start < WIDTH as i16 {
+                self.window_line += 1;
+            }
+        }
+
+        let row = &mut self.framebuffer[ly * WIDTH..(ly + 1) * WIDTH];
+        let bgp = self.bgp;
+        let bg_on = self.lcdc & 0x01 != 0;
+        for (out, &c) in row.iter_mut().zip(bg_color.iter()) {
+            *out = if bg_on { (bgp >> (c * 2)) & 3 } else { 0 };
+        }
+
+        if self.lcdc & 0x02 == 0 {
+            return;
+        }
+        let tall = self.lcdc & 0x04 != 0;
+        let height = if tall { 16 } else { 8 };
+        let mut claimed = [false; WIDTH];
+        for s in &self.sprites[..self.sprite_count] {
+            let mut sprite_row = (ly + 16 - usize::from(s.y)) as u8;
+            if s.flags & 0x40 != 0 {
+                sprite_row = height - 1 - sprite_row;
+            }
+            let tile = if tall { s.tile & 0xFE } else { s.tile };
+            let addr = usize::from(tile) * 16 + usize::from(sprite_row) * 2;
+            let (lo, hi) = (self.vram[addr], self.vram[addr + 1]);
+            let palette = if s.flags & 0x10 != 0 { self.obp1 } else { self.obp0 };
+            for px in 0..8u8 {
+                let x = i16::from(s.x) - 8 + i16::from(px);
+                if !(0..WIDTH as i16).contains(&x) {
+                    continue;
+                }
+                let x = x as usize;
+                if claimed[x] {
+                    continue;
+                }
+                let bit = if s.flags & 0x20 != 0 { px } else { 7 - px };
+                let color = ((hi >> bit) & 1) << 1 | ((lo >> bit) & 1);
+                if color == 0 {
+                    continue;
+                }
+                // The highest-priority opaque object owns this pixel even
+                // if it then loses to the background.
+                claimed[x] = true;
+                if s.flags & 0x80 != 0 && bg_color[x] != 0 {
+                    continue;
+                }
+                row[x] = (palette >> (color * 2)) & 3;
+            }
+        }
     }
 
     /// VRAM locks 4 dots before STAT reports mode 3 (except on the first
@@ -386,6 +479,7 @@ impl Ppu {
                     self.dot = 0;
                     self.mode = Mode::HBlank;
                     self.wy_triggered = false;
+                    self.window_line = 0;
                     if self.update_stat_line() {
                         return IRQ_STAT;
                     }

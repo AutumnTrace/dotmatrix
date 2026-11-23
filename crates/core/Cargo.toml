@@ -9,3 +9,6 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+
+[dev-dependencies]
+png = "0.18"
