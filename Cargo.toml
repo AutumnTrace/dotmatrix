@@ -1,0 +1,21 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+authors = ["Mina Rotari"]
+repository = "https://github.com/AutumnTrace/dotmatrix"
+
+[workspace.dependencies]
+dotmatrix-core = { path = "crates/core" }
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+
+[profile.test]
+opt-level = 3

@@ -1,0 +1,16 @@
+[package]
+name = "dotmatrix-cli"
+description = "Headless command-line runner for the dotmatrix Game Boy emulator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "dotmatrix"
+path = "src/main.rs"
+
+[dependencies]
+dotmatrix-core.workspace = true
