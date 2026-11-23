@@ -86,6 +86,7 @@ impl Bus {
 
         self.if_reg |= self.ppu.tick();
         self.apu.tick();
+        self.cart.tick(4);
     }
 
     fn step_dma(&mut self) {

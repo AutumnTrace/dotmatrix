@@ -62,3 +62,13 @@ fn blargg_halt_bug() {
         }
     });
 }
+
+/// MBC3 ROM banking; the result is on screen after about 40 frames.
+#[test]
+fn mbc3_tester() {
+    compare("mbc3-tester", "mbc3-tester/mbc3-tester.gb", "mbc3-tester/mbc3-tester-dmg.png", |gb| {
+        for _ in 0..60 {
+            gb.run_frame();
+        }
+    });
+}
