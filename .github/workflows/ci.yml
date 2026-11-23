@@ -44,3 +44,29 @@ jobs:
         env:
           # Fail instead of skipping if a ROM went missing.
           DOTMATRIX_REQUIRE_TEST_ROMS: "1"
+
+  wasm:
+    name: wasm build and browser smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: ./scripts/build-web.sh
+      - name: The module must not import anything
+        run: |
+          node -e "const m = new WebAssembly.Module(require('fs').readFileSync('web/dotmatrix.wasm'));
+                   const i = WebAssembly.Module.imports(m);
+                   if (i.length) { console.error(i); process.exit(1); }"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      # GitHub's Ubuntu runners ship Google Chrome, which Playwright drives
+      # through channel "chrome".
+      - run: npm run smoke

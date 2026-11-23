@@ -1,0 +1,17 @@
+{
+  "name": "dotmatrix-web-tools",
+  "private": true,
+  "description": "Dev tooling for the dotmatrix web build: a static server and Playwright scripts for smoke tests and README media",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "serve": "node scripts/serve.mjs",
+    "smoke": "node scripts/web-smoke.mjs",
+    "media": "node scripts/capture-media.mjs"
+  },
+  "devDependencies": {
+    "gifenc": "^1.0.3",
+    "playwright": "^1.65.1",
+    "pngjs": "^7.0.0"
+  }
+}
