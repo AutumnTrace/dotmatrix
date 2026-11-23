@@ -1,0 +1,17 @@
+[package]
+name = "dotmatrix-mcp"
+description = "A stdio MCP server that lets coding agents play Game Boy homebrew on dotmatrix"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "dotmatrix-mcp"
+path = "src/main.rs"
+
+[dependencies]
+dotmatrix-core.workspace = true
+serde_json = "1.0.145"
