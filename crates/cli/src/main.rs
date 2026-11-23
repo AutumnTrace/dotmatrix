@@ -1,4 +1,5 @@
-//! Headless runner: screenshots, serial output, benchmarks and test ROM checks.
+//! Headless runner: screenshots, audio capture, serial output, benchmarks
+//! and test ROM checks.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -27,6 +28,7 @@ RUN OPTIONS:
                             (default 5); buttons: a b start select up down left right
     --serial                print serial port output as it arrives
     --save <file>           load battery RAM from this file and write it back on exit
+    --wav <file>            record the audio output (48 kHz stereo, 16-bit)
     --bench                 run as fast as possible and report frames per second
 ";
 
@@ -90,6 +92,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     let mut presses = Vec::new();
     let mut serial = false;
     let mut save: Option<PathBuf> = None;
+    let mut wav: Option<PathBuf> = None;
     let mut bench = false;
 
     let mut i = 0;
@@ -108,6 +111,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             "--press" => presses.push(parse_press(value(args, &mut i, "--press")?)?),
             "--serial" => serial = true,
             "--save" => save = Some(value(args, &mut i, "--save")?.into()),
+            "--wav" => wav = Some(value(args, &mut i, "--wav")?.into()),
             "--bench" => bench = true,
             flag if flag.starts_with("--") => return Err(format!("unknown option '{flag}'")),
             path => rom = Some(PathBuf::from(path)),
@@ -126,6 +130,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     }
 
     let mut printed = 0;
+    let mut recorded: Vec<i16> = Vec::new();
     let start = Instant::now();
     for frame in 0..frames {
         for p in &presses {
@@ -136,6 +141,9 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             }
         }
         gb.run_frame();
+        if wav.is_some() {
+            recorded.extend(gb.audio_samples().iter().map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16));
+        }
         gb.clear_audio();
         if serial && gb.serial_output().len() > printed {
             let out = std::io::stdout();
@@ -161,10 +169,36 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
         let bytes = png::encode((WIDTH * scale) as u32, (HEIGHT * scale) as u32, 3, &rgb);
         std::fs::write(path, bytes).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }
+    if let Some(path) = &wav {
+        std::fs::write(path, wav_file(&recorded, dotmatrix_core::DEFAULT_SAMPLE_RATE))
+            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    }
     if let (Some(path), Some(data)) = (&save, gb.save_data()) {
         std::fs::write(path, data).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// A canonical 44-byte-header PCM WAV file.
+fn wav_file(samples: &[i16], rate: u32) -> Vec<u8> {
+    let data_len = (samples.len() * 2) as u32;
+    let mut out = Vec::with_capacity(44 + data_len as usize);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&2u16.to_le_bytes()); // stereo
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 4).to_le_bytes());
+    out.extend_from_slice(&4u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    for s in samples {
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+    out
 }
 
 fn collect_roms(path: &Path, out: &mut Vec<PathBuf>) {

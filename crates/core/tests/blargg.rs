@@ -1,4 +1,4 @@
-//! Blargg's CPU and timing test ROMs.
+//! Blargg's CPU, timing and sound test ROMs.
 
 mod common;
 
@@ -49,6 +49,15 @@ blargg_tests! { serial:
 
 blargg_tests! { memory:
     mem_timing_2 => "blargg/mem_timing-2/mem_timing.gb",
+    dmg_sound_01_registers => "blargg/dmg_sound/rom_singles/01-registers.gb",
+    dmg_sound_02_len_ctr => "blargg/dmg_sound/rom_singles/02-len ctr.gb",
+    dmg_sound_03_trigger => "blargg/dmg_sound/rom_singles/03-trigger.gb",
+    dmg_sound_04_sweep => "blargg/dmg_sound/rom_singles/04-sweep.gb",
+    dmg_sound_05_sweep_details => "blargg/dmg_sound/rom_singles/05-sweep details.gb",
+    dmg_sound_06_overflow_on_trigger => "blargg/dmg_sound/rom_singles/06-overflow on trigger.gb",
+    dmg_sound_07_len_sweep_period_sync => "blargg/dmg_sound/rom_singles/07-len sweep period sync.gb",
+    dmg_sound_08_len_ctr_during_power => "blargg/dmg_sound/rom_singles/08-len ctr during power.gb",
+    dmg_sound_11_regs_after_power => "blargg/dmg_sound/rom_singles/11-regs after power.gb",
     // The OAM corruption bug itself is not emulated; these three check that
     // nothing is corrupted when it should not be, and LCD timing.
     oam_bug_1_lcd_sync => "blargg/oam_bug/rom_singles/1-lcd_sync.gb",
