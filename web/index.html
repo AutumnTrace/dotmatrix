@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>dotmatrix · Game Boy emulator in Rust + WebAssembly</title>
+  <meta name="description" content="A Game Boy (DMG) emulator written in Rust, running in your browser through WebAssembly.">
+  <meta name="theme-color" content="#151714">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="main.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="./">dot<span>matrix</span></a>
+    <p class="tagline">A Game Boy emulator in Rust, running on WebAssembly.</p>
+    <a class="source" href="https://github.com/AutumnTrace/dotmatrix">Source on GitHub</a>
+  </header>
+
+  <main class="stage">
+    <section class="console" aria-label="Emulated Game Boy">
+      <div class="bezel">
+        <div class="bezel-label">
+          <span class="led" id="led" title="Power"></span>
+          <span>160 &times; 144 &middot; four shades &middot; stereo</span>
+        </div>
+        <div class="screen" id="screen-wrap">
+          <canvas id="screen" width="160" height="144" aria-label="Game screen"></canvas>
+          <button class="screen-overlay" id="overlay" type="button">
+            <strong id="overlay-title">Loading&hellip;</strong>
+            <span id="overlay-hint"></span>
+          </button>
+        </div>
+      </div>
+      <div class="console-name">dotmatrix<sup>RS</sup></div>
+
+      <div class="pad">
+        <div class="dpad" id="dpad" aria-label="Direction pad" role="group">
+          <span class="dpad-arm up"></span><span class="dpad-arm down"></span>
+          <span class="dpad-arm left"></span><span class="dpad-arm right"></span>
+          <span class="dpad-hub"></span>
+        </div>
+        <div class="ab">
+          <button class="round b" data-button="b" type="button" aria-label="B">B</button>
+          <button class="round a" data-button="a" type="button" aria-label="A">A</button>
+        </div>
+      </div>
+      <div class="menu-buttons">
+        <button class="pill" data-button="select" type="button">SELECT</button>
+        <button class="pill" data-button="start" type="button">START</button>
+      </div>
+      <div class="grille" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </section>
+
+    <aside class="panel">
+      <div class="cart">
+        <div class="cart-label">
+          <span class="cart-kicker">Cartridge</span>
+          <span class="cart-title" id="cart-title">&mdash;</span>
+          <span class="cart-meta" id="cart-meta"></span>
+        </div>
+        <button class="btn primary" id="load-button" type="button">Load ROM&hellip;</button>
+        <input id="file" type="file" accept=".gb,.gbc,.bin" hidden>
+      </div>
+
+      <div class="row transport">
+        <button class="btn" id="pause" type="button" aria-pressed="false">Pause</button>
+        <button class="btn" id="fast" type="button" aria-pressed="false" title="Hold Space">Fast &times;3</button>
+        <button class="btn" id="reset" type="button">Reset</button>
+      </div>
+
+      <div class="row sound">
+        <button class="btn icon" id="mute" type="button" aria-pressed="false" aria-label="Mute">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="waves" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+        </button>
+        <label class="volume">Volume <input id="volume" type="range" min="0" max="100" value="60"></label>
+      </div>
+
+      <fieldset class="palettes">
+        <legend>Screen</legend>
+        <div class="swatches" id="palettes"></div>
+        <label class="toggle"><input type="checkbox" id="grid" checked> LCD grid</label>
+      </fieldset>
+
+      <dl class="stats">
+        <div><dt>Emulated</dt><dd id="fps">&ndash;</dd></div>
+        <div><dt>Speed</dt><dd id="speed">&ndash;</dd></div>
+        <div><dt>Audio buffer</dt><dd id="audio">off</dd></div>
+      </dl>
+
+      <details class="keys">
+        <summary>Controls</summary>
+        <table>
+          <tr><td>D-pad</td><td><kbd>&larr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd></td></tr>
+          <tr><td>A / B</td><td><kbd>X</kbd> / <kbd>Z</kbd></td></tr>
+          <tr><td>Start / Select</td><td><kbd>Enter</kbd> / <kbd>Shift</kbd></td></tr>
+          <tr><td>Fast forward</td><td>hold <kbd>Space</kbd></td></tr>
+          <tr><td>Pause</td><td><kbd>P</kbd></td></tr>
+          <tr><td>Mute</td><td><kbd>M</kbd></td></tr>
+        </table>
+        <p>Gamepads work too (standard mapping). On phones, use the buttons on the console.</p>
+      </details>
+
+      <p class="fineprint">ROMs stay in your browser. Battery saves are kept in localStorage, per game.</p>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <p>Demo game: <a href="https://tangramgames.itch.io/tobutobugirl">Tobu Tobu Girl</a> by Tangram Games, music by potato-tan
+      (<a href="roms/tobutobugirl-LICENSE.txt">MIT code, CC BY 4.0 assets</a>).</p>
+    <p>dotmatrix is MIT licensed. It emulates the original monochrome model only.</p>
+  </footer>
+
+  <div class="drop" id="drop" hidden><p>Drop a <code>.gb</code> file to play it</p></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
