@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-26
+
 ### Added
 
 - MBC3 battery saves carry the real-time clock in the 48-byte footer BGB and
@@ -51,5 +53,6 @@ First release.
 - Test suites: Blargg, Mooneye, dmg-acid2, sprite_priority and MBC3 Tester
   run in CI against the c-sp/game-boy-test-roms v7.0 bundle.
 
-[Unreleased]: https://github.com/AutumnTrace/dotmatrix/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/AutumnTrace/dotmatrix/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/AutumnTrace/dotmatrix/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AutumnTrace/dotmatrix/releases/tag/v0.1.0

@@ -31,21 +31,21 @@ dependencies = [
 
 [[package]]
 name = "dotmatrix-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dotmatrix-core",
 ]
 
 [[package]]
 name = "dotmatrix-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "png",
 ]
 
 [[package]]
 name = "dotmatrix-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dotmatrix-core",
  "serde_json",
@@ -53,7 +53,7 @@ dependencies = [
 
 [[package]]
 name = "dotmatrix-web"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dotmatrix-core",
 ]
