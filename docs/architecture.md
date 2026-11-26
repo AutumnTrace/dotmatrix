@@ -95,9 +95,15 @@ modelled on the output capacitor.
 `Cartridge` parses the header, pads ROM to a power of two and keeps three
 precomputed offsets (bank 0 window, switchable window, RAM window) that are
 recomputed on bank switches, so reads are a single index. ROM only, MBC1
-(including multicart wiring), MBC2, MBC3 (+RTC counting emulated time,
-8-bit bank register for 4 MiB MBC30 ROMs) and MBC5 are supported. Battery
-RAM is exposed as a byte slice for the frontends to persist.
+(including multicart wiring), MBC2, MBC3 (+RTC, 8-bit bank register for 4 MiB MBC30 ROMs) and MBC5 are
+supported. The RTC counts emulated time while running. Battery saves are
+cartridge RAM followed, on clock carts, by the 48-byte footer BGB and VBA-M
+use: live and latched registers as ten little-endian u32s and a 64-bit UNIX
+timestamp. The core has no clock, so frontends pass the wall-clock time in
+when they save and load; on load the clock catches up on the difference
+(arithmetically, after stepping out-of-range register values the way
+hardware wraps them). Saves without the footer, and 44-byte footers with a
+32-bit timestamp, still load.
 
 ## Web frontend
 
@@ -113,4 +119,6 @@ The emulator follows the wall clock while the sound card follows its own
 crystal, so the main thread nudges emulation speed by a fraction of a
 percent based on how much audio the worklet has queued. Saves are written to
 `localStorage` whenever the battery RAM's hash changes (checked twice a
-second) and when the page is hidden.
+second), and on pause, when the page is hidden and when another ROM is
+loaded. The RTC footer is left out of the hash: a running clock is described
+by its registers and timestamp, so it does not need a write every second.

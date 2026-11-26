@@ -109,14 +109,29 @@ impl GameBoy {
         self.bus.cart.has_battery()
     }
 
-    /// Battery-backed cartridge RAM, if the cartridge has a battery.
-    pub fn save_data(&self) -> Option<&[u8]> {
-        self.has_battery().then(|| self.bus.cart.ram())
+    /// The battery save, if the cartridge has a battery: cartridge RAM,
+    /// followed on MBC3 carts with a clock by the 48-byte RTC footer that BGB
+    /// and VBA-M use. `unix_time` is the current wall-clock time in seconds;
+    /// the core has no clock of its own, so the frontend passes it in.
+    pub fn save_data(&self, unix_time: u64) -> Option<Vec<u8>> {
+        self.has_battery().then(|| self.bus.cart.battery_save(unix_time))
     }
 
-    /// Restores battery RAM. Returns false if the size does not match.
-    pub fn load_save_data(&mut self, data: &[u8]) -> bool {
-        self.bus.cart.load_ram(data)
+    /// Length of [`GameBoy::save_data`], or 0 without a battery.
+    pub fn save_len(&self) -> usize {
+        self.bus.cart.battery_save_len()
+    }
+
+    /// True for MBC3 carts with a real-time clock.
+    pub fn has_clock(&self) -> bool {
+        self.bus.cart.has_clock()
+    }
+
+    /// Restores a battery save, with or without an RTC footer. A clock in the
+    /// save catches up on the wall-clock time since it was written. Returns
+    /// false if the size does not fit this cartridge.
+    pub fn load_save_data(&mut self, data: &[u8], unix_time: u64) -> bool {
+        self.bus.cart.load_battery_save(data, unix_time)
     }
 
     pub fn registers(&self) -> Registers {

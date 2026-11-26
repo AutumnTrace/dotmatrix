@@ -85,7 +85,9 @@ test-roms/mooneye-test-suite/acceptance/timer\rapid_toggle.gb PASS
 
 On a phone the console itself is the controller: the d-pad tracks your thumb
 (diagonals included) and every button is multi-touch. Battery saves go to
-`localStorage` per ROM, and ROMs you load never leave the browser.
+`localStorage` per ROM, and ROMs you load never leave the browser. Saves of
+MBC3 cartridges with a clock carry the RTC in the 48-byte footer layout BGB
+and VBA-M use, so the clock catches up on the time the tab was closed.
 
 <p>
   <img src="docs/media/web-desktop.png" width="640" alt="The web frontend on a desktop browser">
@@ -221,8 +223,6 @@ the GIF and screenshots in this README.
 - **OAM corruption bug** (`oam_bug` 2, 4, 5, 7, 8) is not emulated.
 - **Wave RAM access while channel 3 plays** follows a simplified rule, hence
   the three `dmg_sound` failures.
-- **MBC3 real-time clock** counts emulated time only. It is not saved with
-  battery RAM and does not catch up with wall-clock time between sessions.
 - **No boot ROM**: the machine starts in the DMG's post-boot state. `STOP` is
   a low-power wait for a button press with DIV reset, not a model of the
   stopped oscillator.
