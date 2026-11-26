@@ -147,7 +147,11 @@ impl Session {
             h.title,
             size / 1024,
             dotmatrix_core::cartridge::cartridge_type_name(h.cartridge_type),
-            if gb.has_battery() { ", battery RAM" } else { "" },
+            match (gb.has_battery(), gb.has_clock()) {
+                (true, true) => ", battery save with real-time clock",
+                (true, false) => ", battery RAM",
+                _ => "",
+            },
         );
         self.rom_name = h.title.clone();
         self.gb = Some(gb);

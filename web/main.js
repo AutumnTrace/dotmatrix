@@ -99,12 +99,21 @@ function fromBase64(text) {
   return out;
 }
 
+// Saves carry wall-clock seconds so an MBC3 clock can catch up on load.
+function unixSeconds() {
+  return Date.now() / 1000;
+}
+
 function persistSave(force = false) {
   if (!romLoaded || !saveKey) return;
-  const len = wasm.dm_save_len();
+  const len = wasm.dm_save_build(unixSeconds());
   if (!len) return;
+  const ramLen = wasm.dm_save_ram_len();
   const data = memory(wasm.dm_save_ptr(), len);
-  const hash = fnv1a(data);
+  // Only the RAM part decides whether to write. A running clock is already
+  // described by the stored registers and timestamp; forced saves (pause,
+  // tab hidden, page closed, another ROM) record the clock as it stands.
+  const hash = fnv1a(data.subarray(0, ramLen));
   if (!force && hash === lastSaveHash) return;
   try {
     localStorage.setItem(saveKey, toBase64(data));
@@ -119,8 +128,8 @@ function restoreSave() {
   if (!stored) return false;
   const data = fromBase64(stored);
   writeInput(data);
-  const ok = wasm.dm_load_save() === 1;
-  if (ok) lastSaveHash = fnv1a(data);
+  const ok = wasm.dm_load_save(unixSeconds()) === 1;
+  if (ok) lastSaveHash = fnv1a(data.subarray(0, wasm.dm_save_ram_len()));
   return ok;
 }
 

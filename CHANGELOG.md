@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- MBC3 battery saves carry the real-time clock in the 48-byte footer BGB and
+  VBA-M use, and the clock catches up on wall-clock time when the save is
+  loaded (#10). RAM-only saves and 44-byte footers still load. Clock-only
+  carts (MBC3+TIMER+BATTERY) now get a save at all.
+
+### Changed
+
+- `GameBoy::save_data` and `GameBoy::load_save_data` take the current UNIX
+  time; `save_data` returns an owned buffer. The wasm exports gain
+  `dm_save_build` and `dm_save_ram_len`, and `dm_load_save` takes the time.
+
 ## [0.1.0] - 2026-11-23
 
 First release.
@@ -36,4 +51,5 @@ First release.
 - Test suites: Blargg, Mooneye, dmg-acid2, sprite_priority and MBC3 Tester
   run in CI against the c-sp/game-boy-test-roms v7.0 bundle.
 
+[Unreleased]: https://github.com/AutumnTrace/dotmatrix/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/AutumnTrace/dotmatrix/releases/tag/v0.1.0

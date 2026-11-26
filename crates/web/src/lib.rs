@@ -17,6 +17,8 @@ struct State {
     gb: Option<GameBoy>,
     /// Scratch buffer JS writes ROM and save data into.
     input: Vec<u8>,
+    /// The last battery save built for JS to read.
+    save: Vec<u8>,
     rgba: Vec<u8>,
     palette: [[u8; 4]; 4],
     audio: Vec<f32>,
@@ -29,6 +31,7 @@ impl State {
         Self {
             gb: None,
             input: Vec::new(),
+            save: Vec::new(),
             rgba: vec![0; WIDTH * HEIGHT * 4],
             palette: [
                 [0x9B, 0xBC, 0x0F, 0xFF],
@@ -160,23 +163,54 @@ pub extern "C" fn dm_audio_clear() {
     with(|s| s.audio.clear())
 }
 
-/// Length of battery RAM, or 0 if the cartridge has no battery.
+/// Seconds since the UNIX epoch, from a JavaScript `Date.now() / 1000`.
+fn unix_seconds(js: f64) -> u64 {
+    // `as` saturates: NaN and negative times become 0, "unknown" to the core.
+    js as u64
+}
+
+/// Length of the battery save, or 0 if the cartridge has no battery.
 #[unsafe(no_mangle)]
 pub extern "C" fn dm_save_len() -> usize {
-    with(|s| s.gb.as_ref().and_then(|gb| gb.save_data()).map_or(0, <[u8]>::len))
+    with(|s| s.gb.as_ref().map_or(0, GameBoy::save_len))
 }
 
+/// Length of the cartridge RAM at the start of the battery save, without the
+/// RTC footer. The page compares this part to decide when to store the save:
+/// the clock catches up from the footer's timestamp, so a running clock alone
+/// doesn't need a write.
+#[unsafe(no_mangle)]
+pub extern "C" fn dm_save_ram_len() -> usize {
+    with(|s| {
+        s.gb.as_ref().map_or(0, |gb| {
+            gb.save_len().saturating_sub(if gb.has_clock() { dotmatrix_core::cartridge::RTC_FOOTER_LEN } else { 0 })
+        })
+    })
+}
+
+/// Builds the battery save, stamped with `unix_time` (seconds), and returns
+/// its length; read it from `dm_save_ptr`. 0 if the cartridge has no battery.
+#[unsafe(no_mangle)]
+pub extern "C" fn dm_save_build(unix_time: f64) -> usize {
+    with(|s| {
+        s.save = s.gb.as_ref().and_then(|gb| gb.save_data(unix_seconds(unix_time))).unwrap_or_default();
+        s.save.len()
+    })
+}
+
+/// The save built by the last `dm_save_build`.
 #[unsafe(no_mangle)]
 pub extern "C" fn dm_save_ptr() -> *const u8 {
-    with(|s| s.gb.as_ref().and_then(|gb| gb.save_data()).map_or(std::ptr::null(), <[u8]>::as_ptr))
+    with(|s| s.save.as_ptr())
 }
 
-/// Restores battery RAM from the input buffer. Returns 1 on success.
+/// Restores the battery save in the input buffer; an RTC in it catches up to
+/// `unix_time` (seconds). Returns 1 on success.
 #[unsafe(no_mangle)]
-pub extern "C" fn dm_load_save() -> u32 {
+pub extern "C" fn dm_load_save(unix_time: f64) -> u32 {
     with(|s| {
         let data = std::mem::take(&mut s.input);
-        s.gb.as_mut().is_some_and(|gb| gb.load_save_data(&data)) as u32
+        s.gb.as_mut().is_some_and(|gb| gb.load_save_data(&data, unix_seconds(unix_time))) as u32
     })
 }
 
@@ -200,8 +234,45 @@ mod tests {
         dm_run_frame();
         dm_set_button(4, 1);
         assert_eq!(dm_save_len(), 0);
+        assert_eq!(dm_save_build(0.0), 0);
+        assert_eq!(dm_save_ram_len(), 0);
         let ptr = dm_input_buffer(16);
         assert!(!ptr.is_null());
         assert_eq!(dm_load_rom(), 1);
+    }
+
+    fn write_input(bytes: &[u8]) {
+        let ptr = dm_input_buffer(bytes.len());
+        // SAFETY: dm_input_buffer just sized the buffer to bytes.len().
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len()) };
+    }
+
+    #[test]
+    fn mbc3_save_carries_the_clock_through_the_exports() {
+        let mut rom = vec![0u8; 0x8000];
+        rom[0x147] = 0x10; // MBC3+TIMER+RAM+BATTERY
+        rom[0x149] = 0x02; // 8 KiB RAM
+        write_input(&rom);
+        assert_eq!(dm_load_rom(), 0);
+        assert_eq!(dm_save_len(), 0x2000 + 48);
+        assert_eq!(dm_save_ram_len(), 0x2000);
+
+        let saved_at = 1_790_000_000.0;
+        let len = dm_save_build(saved_at);
+        // SAFETY: dm_save_ptr points at the `len` bytes dm_save_build made.
+        let mut save = unsafe { std::slice::from_raw_parts(dm_save_ptr(), len) }.to_vec();
+        assert_eq!(&save[0x2000 + 40..], &1_790_000_000u64.to_le_bytes());
+
+        // Reload the save 90 seconds later: the live seconds register reads 30
+        // after one full minute carried.
+        write_input(&rom);
+        assert_eq!(dm_load_rom(), 0);
+        save[0x2000] = 0; // live seconds
+        write_input(&save);
+        assert_eq!(dm_load_save(saved_at + 90.0), 1);
+        let rebuilt = dm_save_build(saved_at + 90.0);
+        // SAFETY: as above, for the save just rebuilt.
+        let after = unsafe { std::slice::from_raw_parts(dm_save_ptr(), rebuilt) };
+        assert_eq!((after[0x2000], after[0x2000 + 4]), (30, 1));
     }
 }

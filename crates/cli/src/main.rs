@@ -4,7 +4,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use dotmatrix_core::harness::{self, Verdict};
 use dotmatrix_core::png::{self, palette};
@@ -27,7 +27,8 @@ RUN OPTIONS:
                             hold a button from that frame for <hold> frames
                             (default 5); buttons: a b start select up down left right
     --serial                print serial port output as it arrives
-    --save <file>           load battery RAM from this file and write it back on exit
+    --save <file>           load the battery save (RAM, plus the clock on MBC3 carts
+                            that have one) from this file and write it back on exit
     --wav <file>            record the audio output (48 kHz stereo, 16-bit)
     --bench                 run as fast as possible and report frames per second
 ";
@@ -57,6 +58,11 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// Wall-clock seconds for the RTC footer in battery saves.
+fn unix_now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 fn load(path: &Path) -> Result<GameBoy, String> {
@@ -123,7 +129,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
 
     if let Some(path) = &save {
         if let Ok(data) = std::fs::read(path) {
-            if !gb.load_save_data(&data) {
+            if !gb.load_save_data(&data, unix_now()) {
                 eprintln!("warning: {} has the wrong size for this cartridge, ignoring it", path.display());
             }
         }
@@ -173,7 +179,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
         std::fs::write(path, wav_file(&recorded, dotmatrix_core::DEFAULT_SAMPLE_RATE))
             .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }
-    if let (Some(path), Some(data)) = (&save, gb.save_data()) {
+    if let (Some(path), Some(data)) = (&save, gb.save_data(unix_now())) {
         std::fs::write(path, data).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }
     Ok(ExitCode::SUCCESS)
